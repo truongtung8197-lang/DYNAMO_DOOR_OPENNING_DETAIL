@@ -1,0 +1,56 @@
+# Nguyên tắc viết Dynamo Python Tool
+
+## 1. Tách node theo ranh giới hình học
+Chỉ tách node tại điểm mà: (a) sai ở đó thì hậu quả lan ra toàn bộ kết quả, và
+(b) output là kiểu Dynamo xem trực tiếp được (Point, Vector, Curve, CurveLoop, Solid,
+hoặc số/bool đơn giản cần kiểm tra bằng mắt). Không tách vụn theo style code hay theo
+từng hàm tiện ích nội bộ.
+
+## 2. Mỗi node = 1 output chính rõ ràng
+Không đóng gói kết quả vào 1 dict ở cuối. Dữ liệu trung gian phải xem được qua
+Watch/Watch3D trước khi đi tiếp. Log lỗi được phép là 1 output phụ riêng (không tính
+là "gộp dict"), vì mục đích là chẩn đoán chứ không phải giấu dữ liệu.
+
+## 3. Trước khi code: liệt kê bước xử lý ngắn gọn (dạng bảng/gạch đầu dòng, không viết
+đoạn văn dài) + chỉ rõ bước rủi ro cao nhất (dễ sai âm thầm, dễ silent-fail, dễ lệch
+logic mà không lộ ra ở output cuối). Chờ duyệt trước khi viết code.
+
+## 4. Luôn kèm 1 sanity check độc lập
+Cách kiểm tra phải dùng logic/nguồn dữ liệu khác với logic đã tạo ra kết quả — không
+suy luận lại từ chính assumption/parameter đã dùng để tạo. Ví dụ: nếu dùng Width
+parameter để tạo kích thước, sanity check phải đo lại bằng BoundingBox hình học thực tế,
+không đọc lại Width parameter.
+
+## 5. Không giấu lỗi bằng try/except im lặng
+Mọi bước có thể fail phải log rõ lý do + số lượng phần tử fail. Không âm thầm skip.
+
+## 6. Ưu tiên chính xác kiểm tra được + khả năng nâng cấp
+Không tối ưu cho gọn code hay ít node. Task đơn giản (không có bước rủi ro trung gian)
+thì nói rõ lý do không tách, thay vì tự động tách hoặc tự động gộp mặc định.
+
+## 7. Hỏi lại khi cần thêm thông tin
+Đặc biệt các quyết định kiến trúc (VD: parameter là Instance hay Type), ngưỡng số liệu
+(khoảng cách, dung sai), tên parameter cụ thể trong family — hỏi 1 lần, gộp câu hỏi,
+không hỏi rải rác nhiều lượt.
+
+## 8. Tham khảo Revit API 2024
+https://www.revitapidocs.com/2024/ — môi trường làm việc là Revit 2024.
+
+## 9. Giảm diễn giải lặp lại (tiết kiệm token)
+Không nhắc lại toàn bộ nguyên tắc này mỗi lần trả lời. Không lặp lại giải thích kiến
+trúc đã thống nhất — chỉ tham chiếu ngắn gọn (VD: "theo Node4 đã chốt ở progress.md").
+Giải thích ngắn, đi thẳng vào code/quyết định.
+
+## 10. Làm theo phase, test ngay từng phase
+Không viết toàn bộ node một lượt rồi mới debug. Trình tự mỗi phase:
+1. Viết 1-5 node liên quan trực tiếp (1 cụm chức năng).
+2. Dừng lại, để user chạy thử trên model thật.
+3. Chỉ sang phase tiếp theo sau khi phase hiện tại đã xác nhận đúng.
+Nếu 1 node ở phase sau phát hiện lỗi thuộc phase trước, quay lại sửa node đó, không
+viết đè logic vá lỗi ở phase sau.
+
+## 11. Duy trì file progress.md
+Đầu mỗi phiên làm việc: đọc `progress.md` trước khi hỏi lại user bất cứ điều gì đã
+chốt. Cuối mỗi phase (sau khi user xác nhận phase đó chạy đúng): cập nhật `progress.md`.
+Mục đích: cho phép đổi model/phiên làm việc mà không mất context, không phải hỏi lại
+những gì đã quyết định. Cấu trúc progress.md xem file mẫu đi kèm.
