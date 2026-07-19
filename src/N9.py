@@ -1,7 +1,12 @@
 # N9: CreateAnnotation
-# Input:  FamilySymbol (ElementId — từ N8), locationPoint (Dynamo Point — từ N7),
-#         wallDirection (Dynamo Vector — từ N6), widthValue_mm (từ N3)
-# Output: FamilyInstance (annotation) hoặc List<FamilyInstance>, string log
+# Input :
+#   IN[0] = N8 output (FamilySymbol ElementId or List<ElementId>)
+#   IN[1] = N7 output (Dynamo Point or List<Point>)
+#   IN[2] = N6 output (Dynamo Vector or List<Vector>)
+#   IN[3] = N3 output (widthValue_mm or List<double>)
+# Output:
+#   OUT[0] = FamilyInstance (annotation) or List<FamilyInstance>
+#   OUT[1] = Log
 #
 # Tạo line-based Detail Component. Length tự động từ Line (không set parameter).
 
@@ -40,13 +45,21 @@ def create_annotation(family_symbol, location_pt, wall_dir_vec, width_mm):
         view = doc.ActiveView
         elev = view.GenLevel.Elevation if view.GenLevel else 0.0
 
+        # Convert Dynamo Point/Vector → Revit XYZ bằng cách copy tọa độ
         center_xyz = location_pt.ToXyz()
         dir_xyz = wall_dir_vec.ToXyz()
 
-        sp = center_xyz - dir_xyz.Multiply(half)
-        ep = center_xyz + dir_xyz.Multiply(half)
-        sp = XYZ(sp.X, sp.Y, elev)
-        ep = XYZ(ep.X, ep.Y, elev)
+        # Tính 2 điểm đầu/cuối thủ công để tránh lỗi operator overload
+        sp = XYZ(
+            center_xyz.X - dir_xyz.X * half,
+            center_xyz.Y - dir_xyz.Y * half,
+            elev
+        )
+        ep = XYZ(
+            center_xyz.X + dir_xyz.X * half,
+            center_xyz.Y + dir_xyz.Y * half,
+            elev
+        )
         line = Line.CreateBound(sp, ep)
 
         annotation = doc.Create.NewFamilyInstance(line, family_symbol, view)
@@ -57,14 +70,26 @@ def create_annotation(family_symbol, location_pt, wall_dir_vec, width_mm):
         return None, str(e)
 
 
+def is_iterable_list(obj):
+    """Check if obj is a list/tuple (not FamilySymbol, not str, not ElementId)."""
+    if obj is None:
+        return False
+    if isinstance(obj, (FamilySymbol, ElementId, str)):
+        return False
+    return hasattr(obj, "__iter__")
+
+
 def unwrap_deep(obj):
-    """Unwrap nested lists/objects đến khi ra object thực tế."""
+    """Unwrap nested lists đến khi ra object thực tế."""
     if obj is None:
         return None
-    # Nếu là list, lấy phần tử đầu và tiếp tục unwrap
-    while hasattr(obj, "__iter__") and not isinstance(obj, str):
+    if isinstance(obj, (FamilySymbol, ElementId, str)):
+        return obj
+    while hasattr(obj, "__iter__"):
         if len(obj) > 0:
             obj = obj[0]
+            if isinstance(obj, (FamilySymbol, ElementId, str)):
+                return obj
         else:
             return None
     return obj
@@ -74,16 +99,14 @@ def unwrap_deep(obj):
 raw_sym = IN[0]
 
 # N8 output là [list_ElementId, log_string] → extract list_ElementId
-if hasattr(raw_sym, "__iter__") and not isinstance(raw_sym, str):
+if is_iterable_list(raw_sym):
     if len(raw_sym) > 0:
         first = raw_sym[0]
-        if hasattr(first, "__iter__") and not isinstance(first, str):
+        if is_iterable_list(first):
             raw_sym = first
         elif isinstance(first, str):
             for item in raw_sym:
-                if isinstance(item, (int, float)) or (
-                    hasattr(item, "__iter__") and not isinstance(item, str)
-                ):
+                if isinstance(item, ElementId) or is_iterable_list(item):
                     raw_sym = item
                     break
             else:
@@ -93,14 +116,10 @@ if hasattr(raw_sym, "__iter__") and not isinstance(raw_sym, str):
 family_symbols = []
 if isinstance(raw_sym, ElementId):
     family_symbols = [doc.GetElement(raw_sym)]
-elif isinstance(raw_sym, list):
+elif is_iterable_list(raw_sym):
     for item in raw_sym:
         # Unwrap nested lists đến khi ra ElementId
-        while (
-            hasattr(item, "__iter__")
-            and not isinstance(item, str)
-            and not isinstance(item, ElementId)
-        ):
+        while is_iterable_list(item):
             if len(item) > 0:
                 item = item[0]
             else:
@@ -116,8 +135,8 @@ else:
 
 # Helper: unwrap N1-style output [list, log]
 def unwrap_n1_output(raw):
-    if hasattr(raw, "__iter__") and not isinstance(raw, str):
-        if len(raw) > 0 and hasattr(raw[0], "__iter__") and not isinstance(raw[0], str):
+    if is_iterable_list(raw):
+        if len(raw) > 0 and is_iterable_list(raw[0]):
             return raw[0]
     return raw
 
@@ -126,13 +145,13 @@ raw_pt = unwrap_n1_output(IN[1])
 raw_vec = unwrap_n1_output(IN[2])
 raw_width = unwrap_n1_output(IN[3])
 
-is_list_pt = hasattr(raw_pt, "__iter__") and not isinstance(raw_pt, str)
+is_list_pt = is_iterable_list(raw_pt)
 pts = raw_pt if is_list_pt else [raw_pt]
 
-is_list_vec = hasattr(raw_vec, "__iter__") and not isinstance(raw_vec, str)
+is_list_vec = is_iterable_list(raw_vec)
 vecs = raw_vec if is_list_vec else [raw_vec]
 
-is_list_w = hasattr(raw_width, "__iter__") and not isinstance(raw_width, str)
+is_list_w = is_iterable_list(raw_width)
 widths = raw_width if is_list_w else [raw_width]
 
 is_list = is_list_pt or is_list_vec or is_list_w
@@ -149,8 +168,8 @@ for i in range(count):
     w = widths[i] if i < len(widths) else None
 
     # Nếu width vẫn là list (từ N3), unwrap sâu
-    if w is not None and hasattr(w, "__iter__") and not isinstance(w, str):
-        while hasattr(w, "__iter__") and not isinstance(w, str):
+    if w is not None and is_iterable_list(w):
+        while is_iterable_list(w):
             if len(w) > 0:
                 w = w[0]
             else:

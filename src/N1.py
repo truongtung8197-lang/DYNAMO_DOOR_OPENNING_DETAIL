@@ -1,6 +1,9 @@
 # N1: GetSelectedElements
-# Input:  List<Element> từ Dynamo selection (Select Model Elements)
-# Output: List<Element> (chỉ Doors & Windows), string log
+# Input :
+#   IN[0] = Revit element selection (Select Model Elements)
+# Output:
+#   OUT[0] = List<Element> (Doors & Windows)
+#   OUT[1] = Log
 #
 # Lọc danh sách element được chọn, chỉ giữ lại Doors và Windows.
 # Bỏ qua element null hoặc không thuộc category phù hợp.

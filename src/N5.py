@@ -1,6 +1,11 @@
 # N5: GetWallThickness
-# Input:  1 Wall hoặc List<Wall> — output của N4
-# Output: wallThickness (double, mm) hoặc List<double>, string log
+# Input :
+#   IN[0] = N4 output (Wall or List<Wall>)
+# Output:
+#   OUT[0] = thickness_mm (double) or List<double>
+#   OUT[1] = Log
+#
+# Lấy độ dày tường từ WallType.Width (Revit API).
 
 import clr
 
@@ -13,59 +18,51 @@ from RevitServices.Persistence import DocumentManager
 doc = DocumentManager.Instance.CurrentDBDocument
 
 
-def get_thickness(wall):
+def get_wall_thickness(wall):
+    """Lấy wall thickness từ WallType.Width. Trả về (thickness_mm, error_str)."""
     if wall is None:
         return None, "Wall is null."
-    # Unwrap nếu là Dynamo wrapper
-    unwrapped = UnwrapElement(wall)
-    if not isinstance(unwrapped, Wall):
-        return (
-            None,
-            f"Input is {unwrapped.GetType().Name if unwrapped else 'None'}, not Wall.",
-        )
-    wall = unwrapped
     try:
-        bb = wall.get_BoundingBox(None)
-        if bb is None:
-            return None, "Wall has no BoundingBox."
-        loc = wall.Location
-        if loc is None or not isinstance(loc, LocationCurve):
-            return None, "Wall has no LocationCurve."
-        curve = loc.Curve
-        dir_vec = (curve.GetEndPoint(1) - curve.GetEndPoint(0)).Normalize()
-        wall_dir_xy = XYZ(dir_vec.X, dir_vec.Y, 0).Normalize()
-        perp_dir = XYZ(-wall_dir_xy.Y, wall_dir_xy.X, 0)
-        minp, maxp = bb.Min, bb.Max
-        corners = [
-            XYZ(minp.X, minp.Y, minp.Z),
-            XYZ(maxp.X, minp.Y, minp.Z),
-            XYZ(minp.X, maxp.Y, minp.Z),
-            XYZ(maxp.X, maxp.Y, minp.Z),
-            XYZ(minp.X, minp.Y, maxp.Z),
-            XYZ(maxp.X, minp.Y, maxp.Z),
-            XYZ(minp.X, maxp.Y, maxp.Z),
-            XYZ(maxp.X, maxp.Y, maxp.Z),
-        ]
-        proj = [c.DotProduct(perp_dir) for c in corners]
-        val = (max(proj) - min(proj)) * 304.8
-        if val <= 0:
-            return None, "Invalid thickness (<= 0)."
-        return val, None
+        # Unwrap wall nếu cần
+        wall_el = UnwrapElement(wall)
+        if not isinstance(wall_el, Wall):
+            return None, f"Input is {type(wall_el).__name__}, not Wall."
+        
+        # Lấy WallType, từ đó lấy Width (feet)
+        wall_type = wall_el.WallType
+        if wall_type is None:
+            return None, "Wall has no WallType."
+        
+        # WallType.Width trả về độ dày thực tế của tường (feet)
+        thickness_ft = wall_type.Width
+        
+        if thickness_ft <= 0:
+            return None, f"Invalid WallType.Width: {thickness_ft}"
+        
+        # Chuyển feet → mm
+        thickness_mm = thickness_ft * 304.8
+        
+        return thickness_mm, None
     except Exception as e:
         return None, str(e)
 
 
+# --- INPUT ---
 raw = IN[0]
+
+# N4 output có thể là [list, log] → extract list
 if hasattr(raw, "__iter__") and not isinstance(raw, str):
     if len(raw) > 0 and hasattr(raw[0], "__iter__") and not isinstance(raw[0], str):
         raw = raw[0]
+
 is_list = hasattr(raw, "__iter__") and not isinstance(raw, str)
 inputs = raw if is_list else [raw]
 results = []
 errors = []
 
 for i, inp in enumerate(inputs):
-    val, err = get_thickness(inp)
+    wall = UnwrapElement(inp)
+    val, err = get_wall_thickness(wall)
     results.append(val)
     if err:
         errors.append(f"[{i}]: {err}")
@@ -73,11 +70,10 @@ for i, inp in enumerate(inputs):
 if not is_list:
     results = results[0]
 
+# --- OUTPUT ---
 log_parts = []
 if not is_list:
-    log_parts.append(
-        f"Thickness: {results:.1f} mm" if results is not None else "Thickness: null"
-    )
+    log_parts.append(f"Thickness: {results:.1f} mm" if results is not None else "Thickness: null")
 else:
     valid = [r for r in results if r is not None]
     log_parts.append(f"Total: {len(inputs)}, Valid: {len(valid)}")

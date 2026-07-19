@@ -1,10 +1,14 @@
 # N8: GetOrCreateType
-# Input:  FamilySymbol (original — từ N2), wallThickness_mm (double hoặc List<double> — từ N5)
-# Output: ElementId (FamilySymbol) hoặc List<ElementId>, string log
+# Input :
+#   IN[0] = N2 output (FamilySymbol)
+#   IN[1] = N5 output (wallThickness_mm or List<double>)
+#   IN[2] = Parameter name (string, optional — default "Width_Door")
+# Output:
+#   OUT[0] = ElementId or List<ElementId>
+#   OUT[1] = Log
 #
-# Width (Type parameter) của Detail = độ dày tường.
-# Nếu type với Width này đã tồn tại → trả về ElementId của nó.
-# Nếu chưa → duplicate, đặt tên `<Gốc>_T<wallThickness>`, set Width = wall thickness.
+# Duplicate type với Width = wall thickness. Tên type mới = `<Tên gốc>_T<wallThickness>`
+# Parameter name configurable qua IN[2]. Mặc định: "Width_Door"
 
 import clr
 
@@ -15,101 +19,158 @@ clr.AddReference("RevitServices")
 from RevitServices.Persistence import DocumentManager
 from RevitServices.Transactions import TransactionManager
 
+clr.AddReference("RevitNodes")
+import Revit
+
 doc = DocumentManager.Instance.CurrentDBDocument
 
+# --- CONSTANTS ---
+DEFAULT_PARAM_NAME = "Width_Door"
+
+
+def get_or_create_type(family_symbol, thickness_mm, param_name):
+    """Duplicate type với Width = thickness_mm. Trả về (ElementId, error_str)."""
+    if family_symbol is None:
+        return None, "FamilySymbol is null."
+    if thickness_mm is None or thickness_mm <= 0:
+        return None, "Invalid thickness: {} mm".format(thickness_mm)
+    
+    try:
+        # Unwrap FamilySymbol nếu cần
+        fam_sym = UnwrapElement(family_symbol)
+        if not isinstance(fam_sym, FamilySymbol):
+            return None, "Input is {}, not FamilySymbol.".format(type(fam_sym).__name__)
+        
+        # Lấy tên type gốc
+        orig_name = fam_sym.get_Parameter(BuiltInParameter.SYMBOL_NAME_PARAM).AsString()
+        if orig_name is None:
+            orig_name = "Unknown"
+        
+        # Tên type mới
+        new_name = "{}_T{:.0f}".format(orig_name, thickness_mm)
+        
+        # Kiểm tra xem type đã tồn tại chưa
+        family = fam_sym.Family
+        existing_symbol = None
+        for sym_id in family.GetFamilySymbolIds():
+            sym = doc.GetElement(sym_id)
+            if sym.get_Parameter(BuiltInParameter.SYMBOL_NAME_PARAM).AsString() == new_name:
+                existing_symbol = sym
+                break
+        
+        if existing_symbol is not None:
+            # Type đã tồn tại, trả về luôn
+            return existing_symbol.Id, None
+        
+        # Duplicate type mới
+        new_symbol = fam_sym.Duplicate(new_name)
+        if new_symbol is None:
+            return None, "Duplicate() returned null."
+        
+        # Set Width parameter (mm → feet)
+        width_param = new_symbol.LookupParameter(param_name)
+        if width_param is None:
+            return None, "Cannot find '{}' parameter on new type.".format(param_name)
+        
+        width_param.Set(thickness_mm / 304.8)
+        
+        return new_symbol.Id, None
+        
+    except Exception as e:
+        return None, str(e)
+
+
 # --- INPUT ---
-raw_orig = IN[0]
-if hasattr(raw_orig, "__iter__") and not isinstance(raw_orig, str):
-    raw_orig = raw_orig[0] if len(raw_orig) > 0 else None
-if isinstance(raw_orig, ElementId):
-    orig_sym = doc.GetElement(raw_orig)
+raw_symbol = IN[0]
+raw_thickness = IN[1]
+
+# IN[2] = parameter name (configurable), mặc định "Width_Door"
+try:
+    raw_param_name = IN[2]
+except IndexError:
+    raw_param_name = None
+
+if raw_param_name is None or not isinstance(raw_param_name, str) or raw_param_name.strip() == "":
+    param_name = DEFAULT_PARAM_NAME
 else:
-    orig_sym = UnwrapElement(raw_orig)
+    param_name = raw_param_name.strip()
 
-raw_thick = IN[1]
+# Unwrap N2 output: N2 trả về (FamilySymbol, location, log)
+# Nếu là tuple/list 3 phần tử, lấy phần tử đầu (FamilySymbol)
+if isinstance(raw_symbol, (list, tuple)):
+    if len(raw_symbol) >= 1:
+        raw_symbol = raw_symbol[0]
 
-# N5/N6/N7 output là [list_values, log_string] → extract list_values
-if hasattr(raw_thick, "__iter__") and not isinstance(raw_thick, str):
-    if len(raw_thick) > 0:
-        first = raw_thick[0]
-        # Nếu first là list → đó là [values, log]
-        if hasattr(first, "__iter__") and not isinstance(first, str):
-            raw_thick = first
-        # Nếu first là string → đó là log, cần tìm phần tử số
-        elif isinstance(first, str):
-            for item in raw_thick:
-                if not isinstance(item, str):
-                    raw_thick = item
-                    break
-            else:
-                raw_thick = None
+# N5 output có thể là [list, log] → extract list
+if isinstance(raw_thickness, (list, tuple)):
+    if len(raw_thickness) > 0 and isinstance(raw_thickness[0], (list, tuple)):
+        raw_thickness = raw_thickness[0]
 
-is_list = hasattr(raw_thick, "__iter__") and not isinstance(raw_thick, str)
-thicknesses = raw_thick if is_list else [raw_thick]
+# Đảm bảo thicknesses là list
+if isinstance(raw_thickness, (list, tuple)):
+    thicknesses = list(raw_thickness)
+    is_list_thick = True
+elif isinstance(raw_thickness, (int, float)):
+    thicknesses = [raw_thickness]
+    is_list_thick = False
+else:
+    thicknesses = [raw_thickness]
+    is_list_thick = False
+
+# Lấy FamilySymbol từ raw_symbol (bỏ qua batch vì N2 chỉ có 1 symbol)
+if isinstance(raw_symbol, (list, tuple)):
+    # Unwrap nested list nếu cần
+    temp = raw_symbol
+    while isinstance(temp, (list, tuple)):
+        if len(temp) > 0:
+            temp = temp[0]
+        else:
+            temp = None
+            break
+    base_symbol = temp
+elif isinstance(raw_symbol, FamilySymbol):
+    base_symbol = raw_symbol
+else:
+    base_symbol = raw_symbol
+
+# Dùng 1 symbol cho tất cả các thickness
+symbol = UnwrapElement(base_symbol)
+
+# is_list: true nếu thicknesses > 1
+is_list = len(thicknesses) > 1
+count = len(thicknesses)
 
 results = []
 errors = []
 
-if orig_sym is None:
-    errors.append("Original FamilySymbol is null.")
-    results = [None] * len(thicknesses)
-else:
-    cache = {}
-    TransactionManager.Instance.EnsureInTransaction(doc)
+TransactionManager.Instance.EnsureInTransaction(doc)
 
-    for i, t in enumerate(thicknesses):
-        try:
-            wt = float(t)
-            if wt <= 0:
-                errors.append(f"[{i}]: Invalid thickness {wt}")
-                results.append(None)
-                continue
+for i in range(count):
+    thick = thicknesses[i]
+    type_id, err = get_or_create_type(symbol, thick, param_name)
+    results.append(type_id)
+    if err:
+        errors.append("[{}]: {}".format(i, err))
 
-            key = round(wt, 1)
-            if key in cache:
-                results.append(cache[key])
-                continue
-
-            tn = f"{orig_sym.Name}_T{wt:.0f}"
-            existing = None
-            for sid in orig_sym.Family.GetFamilySymbolIds():
-                s = doc.GetElement(sid)
-                if s is not None and s.Name == tn:
-                    existing = s
-                    break
-
-            if existing is not None:
-                cache[key] = existing.Id
-                results.append(existing.Id)
-            else:
-                new_sym = orig_sym.Duplicate(tn)
-                if new_sym is None:
-                    errors.append(f"[{i}]: Duplicate returned null.")
-                    results.append(None)
-                else:
-                    wp = new_sym.LookupParameter("Width")
-                    if wp is not None:
-                        wp.Set(wt / 304.8)
-                    cache[key] = new_sym.Id
-                    results.append(new_sym.Id)
-        except Exception as ex:
-            errors.append(f"[{i}]: {str(ex)}")
-            results.append(None)
-
-    TransactionManager.Instance.TransactionTaskDone()
+TransactionManager.Instance.TransactionTaskDone()
 
 if not is_list:
-    results = results[0]
+    if results and len(results) > 0:
+        results = results[0]
+    else:
+        results = None
 
+# --- OUTPUT ---
 log_parts = []
 if not is_list:
-    log_parts.append(
-        f"Type: {orig_sym.Name}_T{float(raw_thick):.0f}" if results else "Type: null"
-    )
+    if results is not None:
+        log_parts.append("Type ID: {}".format(results.IntegerValue))
+    else:
+        log_parts.append("Failed to create type.")
 else:
     valid = [r for r in results if r is not None]
-    log_parts.append(f"Total: {len(thicknesses)}, Created/Found: {len(valid)}")
+    log_parts.append("Total: {}, Created: {}".format(count, len(valid)))
 if errors:
-    log_parts.append(f"Errors: {'; '.join(errors[:3])}")
+    log_parts.append("Errors: {}".format("; ".join(errors[:5])))
 
 OUT = results, "\n".join(log_parts)

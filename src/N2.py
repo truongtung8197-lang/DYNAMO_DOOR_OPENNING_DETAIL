@@ -1,9 +1,10 @@
 # N2: PickDetailComponent
-# Input:  1 Detail Component instance (FamilyInstance) được chọn từ model
-# Output: FamilySymbol (để dùng cho placement), Point (location), string log
-#
-# Trích xuất FamilySymbol và Location Point từ 1 Detail Component instance.
-# Detail Component là annotation element trong model.
+# Input :
+#   IN[0] = Detail Component instance (select in model)
+# Output:
+#   OUT[0] = FamilySymbol
+#   OUT[1] = Dynamo Point (Location)
+#   OUT[2] = Log
 
 import clr
 
@@ -15,61 +16,123 @@ from RevitServices.Persistence import DocumentManager
 
 clr.AddReference("RevitNodes")
 import Revit
-
 clr.ImportExtensions(Revit.GeometryConversion)
 
 doc = DocumentManager.Instance.CurrentDBDocument
 
-# --- INPUT ---
-detail_instance = UnwrapElement(IN[0])
+# ------------------------------------------------------
+# Input
+# ------------------------------------------------------
 
-# --- XỬ LÝ ---
-errors = []
+element = UnwrapElement(IN[0])
+
 family_symbol = None
-location_point = None
+location = None
+errors = []
 
-if detail_instance is None:
-    errors.append("Input is null. Please select a Detail Component instance.")
-elif not isinstance(detail_instance, FamilyInstance):
-    errors.append(
-        f"Input is {detail_instance.GetType().Name}, not a FamilyInstance. "
-        "Please select a Detail Component instance."
-    )
+# ------------------------------------------------------
+# Check input
+# ------------------------------------------------------
+
+if element is None:
+    errors.append("Input is null.")
+
 else:
-    try:
-        # Lấy FamilySymbol
-        family_symbol = detail_instance.Symbol  # FamilySymbol
-        symbol_name = family_symbol.Name if family_symbol else "null"
-    except Exception as e:
-        errors.append(f"Cannot get FamilySymbol: {str(e)}")
 
     try:
-        # Lấy Location — có thể là LocationPoint hoặc LocationCurve
-        loc = detail_instance.Location
-        if loc is None:
-            errors.append("Element has no Location.")
-        elif isinstance(loc, LocationPoint):
-            location_point = loc.Point.ToPoint()
-        elif isinstance(loc, LocationCurve):
-            # Detail Component có LocationCurve → lấy StartPoint (gốc family)
-            curve = loc.Curve
-            start = curve.GetEndPoint(0)
-            # Đổi sang Dynamo Point
-            location_point = start.ToPoint()
+        # Lấy FamilySymbol bằng GetTypeId() (ổn định hơn .Symbol)
+        type_id = element.GetTypeId()
+
+        if type_id == ElementId.InvalidElementId:
+            errors.append("Element has no valid TypeId.")
         else:
-            errors.append(f"Location is {loc.GetType().Name}, unexpected type.")
-    except Exception as e:
-        errors.append(f"Cannot get Location: {str(e)}")
+            family_symbol = doc.GetElement(type_id)
 
-# --- OUTPUT ---
-log_parts = []
-if family_symbol:
-    log_parts.append(f"FamilySymbol: {family_symbol.FamilyName} / {symbol_name}")
-if location_point:
-    log_parts.append(
-        f"Location: ({location_point.X}, {location_point.Y}, {location_point.Z})"
+            if not isinstance(family_symbol, FamilySymbol):
+                errors.append(
+                    "Type is {}, not FamilySymbol.".format(
+                        family_symbol.GetType().Name
+                    )
+                )
+
+    except Exception as ex:
+        errors.append("Cannot get FamilySymbol: {}".format(ex))
+
+    # --------------------------------------------------
+    # Location
+    # --------------------------------------------------
+
+    try:
+
+        loc = element.Location
+
+        if loc is None:
+
+            errors.append("Element has no Location.")
+
+        elif isinstance(loc, LocationPoint):
+
+            location = loc.Point.ToPoint()
+
+        elif isinstance(loc, LocationCurve):
+
+            curve = loc.Curve
+
+            mid = curve.Evaluate(0.5, True)
+
+            location = mid.ToPoint()
+
+        else:
+
+            errors.append(
+                "Unsupported Location type: {}".format(
+                    loc.GetType().Name
+                )
+            )
+
+    except Exception as ex:
+
+        errors.append("Cannot get Location: {}".format(ex))
+
+# ------------------------------------------------------
+# Log
+# ------------------------------------------------------
+
+log = []
+
+if family_symbol is not None:
+
+    try:
+        fam_name = family_symbol.Family.Name
+    except:
+        fam_name = "<Unknown Family>"
+
+    try:
+        type_name = family_symbol.get_Parameter(
+            BuiltInParameter.SYMBOL_NAME_PARAM
+        ).AsString()
+    except:
+        type_name = "<Unknown Type>"
+
+    log.append(
+        "Family: {} | Type: {}".format(
+            fam_name,
+            type_name
+        )
     )
-if errors:
-    log_parts.append(f"Errors: {'; '.join(errors)}")
 
-OUT = family_symbol, location_point, "\n".join(log_parts)
+if location is not None:
+
+    log.append(
+        "Location: ({:.1f}, {:.1f}, {:.1f})".format(
+            location.X,
+            location.Y,
+            location.Z
+        )
+    )
+
+if errors:
+
+    log.append("Errors: " + "; ".join(errors))
+
+OUT = family_symbol, location, "\n".join(log)

@@ -1,6 +1,9 @@
 # N4: GetHostWall
-# Input:  1 Element hoặc List<Element> — output của N1
-# Output: Wall (host wall) hoặc List<Wall>, string log
+# Input :
+#   IN[0] = N1 output (Element or List<Element>)
+# Output:
+#   OUT[0] = Wall (host wall) or List<Wall>
+#   OUT[1] = Log
 
 import clr
 

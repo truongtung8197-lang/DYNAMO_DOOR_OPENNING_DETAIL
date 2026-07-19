@@ -1,6 +1,9 @@
 # N7: GetLocationPoint
-# Input:  1 Element hoặc List<Element> — output của N1
-# Output: Point (Dynamo Point) hoặc List<Point>, string log
+# Input :
+#   IN[0] = N1 output (Element or List<Element>)
+# Output:
+#   OUT[0] = Dynamo Point or List<Point>
+#   OUT[1] = Log
 
 import clr
 

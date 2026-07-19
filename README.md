@@ -1,9 +1,3 @@
-Tôi thấy `README.md` hiện tại đang trùng với `progress.md` khá nhiều. `README` nên tập trung vào **cách cài đặt và sử dụng**, còn lịch sử debug và bài học nên để trong `progress.md`.
-
-Tôi đề xuất sửa thành như sau.
-
----
-
 # Dynamo Tool: Annotate Cửa / Cửa sổ (Detail Component)
 
 Tự động tạo Detail Component annotation cho Door và Window trong Plan View, đặt đúng vị trí và tự điều chỉnh theo kích thước thực tế của cửa và độ dày tường.
@@ -34,7 +28,7 @@ Length = Width cửa + 40 mm
 Width_Door (Type Parameter) = độ dày tường
 ```
 
-* Kiểm tra kết quả sau khi tạo annotation bằng node `N10`.
+* Kiểm tra kết quả sau khi tạo annotation bằng các node Dynamo có sẵn (Watch, List.Contains, v.v.).
 
 ---
 
@@ -70,8 +64,7 @@ Width_Door
     ├── N6_GetWallOrientation.py
     ├── N7_GetLocationPoint.py
     ├── N8_GetOrCreateType.py
-    ├── N9_CreateAnnotation.py
-    └── N10_SanityCheck.py
+    └── N9_CreateAnnotation.py
 ```
 
 ---
@@ -107,7 +100,7 @@ thành đường dẫn tương ứng của từng node:
 N1.py
 N2.py
 ...
-N10.py
+N9.py
 ```
 
 Cách này giúp:
@@ -132,7 +125,6 @@ Cách này giúp:
 | N7   | Lấy tâm cửa                  |
 | N8   | Tìm hoặc tạo Type phù hợp    |
 | N9   | Tạo annotation               |
-| N10  | Kiểm tra kết quả             |
 
 ---
 
@@ -148,11 +140,9 @@ N4 → N5, N6
 N2 + N5 → N8
 
 N8 + N7 + N6 + N3 → N9
-
-N9 + N3 + N5 → N10
 ```
 
-Tất cả các node từ `N3 → N10` đều hỗ trợ list input.
+Tất cả các node từ `N3 → N9` đều hỗ trợ list input.
 
 Không cần:
 
@@ -169,7 +159,7 @@ Không cần:
 3. Dùng `N2` để chọn một Detail Component mẫu trong model.
 4. Nối dây theo sơ đồ ở mục 6.
 5. Chạy graph Dynamo.
-6. Kiểm tra kết quả tại output của `N10`.
+6. Kiểm tra kết quả bằng các node Dynamo có sẵn (Watch, List.Contains, v.v.).
 
 ---
 
@@ -183,17 +173,20 @@ Không cần:
 * Tạo annotation đúng hướng.
 * Tự tạo Type theo độ dày tường.
 * Hỗ trợ xử lý batch.
-* Tự kiểm tra bằng `N10`.
 
-`N10_SanityCheck` hiện đã hoạt động bình thường và xác nhận:
+**Cách kiểm tra thủ công**: dùng các node Dynamo có sẵn (Watch, List.Contains, v.v.) để kiểm tra:
 
-* `Width_Door = Wall Thickness`
-* `Length = Door Width + 40 mm`
+* `Width_Door` (type parameter) có bằng độ dày tường không.
+* `Length` có bằng `Width cửa + 40 mm` không.
+
+**Chưa kiểm tra tự động được** (cần kiểm tra thủ công bằng mắt hoặc bằng các node Dynamo có sẵn):
+
+* Vị trí đặt detail có đúng ở giữa cửa không (mỗi bên cách đều mép cửa 20mm).
+* Có bị trùng lặp không (hiện chưa có cơ chế chống duplicate, nếu bị trùng sẽ hiện thông báo).
 
 ---
 
 # 9. Ghi chú
 
-* Node `N10` chỉ dùng để kiểm tra kết quả, không ảnh hưởng đến việc tạo annotation.
 * `progress.md` chứa toàn bộ lịch sử phát triển, quyết định kiến trúc và các lỗi đã xử lý.
 * Khi thay đổi tên parameter trong family, cần cập nhật đồng thời các node sử dụng parameter đó.

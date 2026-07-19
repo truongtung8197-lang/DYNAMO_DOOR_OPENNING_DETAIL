@@ -1,6 +1,9 @@
 # N3: GetWidth
-# Input:  1 Element hoặc List<Element> — output của N1
-# Output: widthValue (double, mm) hoặc List<double>, string log
+# Input :
+#   IN[0] = N1 output (Element or List<Element>)
+# Output:
+#   OUT[0] = widthValue (double, mm) or List<double>
+#   OUT[1] = Log
 
 import clr
 
