@@ -1,10 +1,14 @@
 # Progress — Dynamo Tool: Annotate Cửa/Cửa sổ
 
 ## Trạng thái hiện tại
-Phase 1-3 xong (batch, 9 node N1-N9). N10 **đã xoá** — chuyển sang kiểm tra thủ công
+
+Phase 1-3 xong (batch, 9 node N1-N9).
+Phase 4: N10 **đã xoá** — chuyển sang kiểm tra thủ công
 bằng các node Dynamo có sẵn (Watch, List.Contains, v.v.).
+Phase 5 (N11-N13 Auto Dimensioning): **Đã bỏ**, không còn sử dụng tool.
 
 ## Mục tiêu tool
+
 Quét Doors + Windows ở Plan View, tự động tạo Detail Component annotation tại
 vị trí mỗi cửa: Width (Type param) = độ dày tường; Length (Instance param) =
 width cửa + 40mm; hướng song song wall centerline; vị trí = Location Point.
@@ -35,8 +39,10 @@ width cửa + 40mm; hướng song song wall centerline; vị trí = Location Poi
 | N7 GetLocationPoint | Location Point tâm cửa | N1 | ✅ |
 | N8 GetOrCreateType | Duplicate type (Width=thickness), IN[2]=paramName | N2+N5 | ✅ |
 | N9 CreateAnnotation | Tạo line-based DC | N8+N7+N6+N3 | ✅ |
+| N9Check VerifyPlacement | Sanity check vị trí (independent bbox + wall curve vs read-back annotation) | N9+N1+N4, IN[3]=extra_mm | ⚠️ Cần test trên model |
 
 ## Sơ đồ nối dây (single element hay batch dùng chung 1 sơ đồ)
+
 ```
 N1 ─┬→ N3
     ├→ N4 → N5 → N8 (+ N2)
@@ -44,6 +50,7 @@ N1 ─┬→ N3
     └→ N7
 N8 + N7 + N6 + N3 → N9
 ```
+
 Test 1 phần tử: `N1 → List.GetItemAtIndex(0)` trước khi vào N3/N4/N7. Batch
 nhiều cửa: nối thẳng N1, không cần `List.Map`. IN[2] (N8) là
 string tên parameter, để trống dùng mặc định `"Width_Door"`.
@@ -61,23 +68,26 @@ string tên parameter, để trống dùng mặc định `"Width_Door"`.
 | N8 | File N8.py/N5.py từng bị dán nhầm code N2 | Viết lại đúng logic (18/7) |
 | N9 | Line không nằm trong plane view; XYZ mất valid qua wire; toán tử XYZ +/- không hoạt động | Set Z=view elevation; copy XYZ mới; tính tọa độ thủ công |
 | N9 | Length param read-only trong family | Bỏ set Length, để auto từ Line |
+| N9 | Hardcode 20mm mỗi bên (`+40.0`) | Thêm IN[4] = extra mm mỗi bên (default 20), `width + 2*extra`; log ghi giá trị |
+| N9 | Chạy lại sinh duplicate Detail Component | Quét existing cùng FamilySymbol + midpoint + direction trong Active View, skip nếu trùng (key sign-independent) |
 
-## Lỗi generic đã gặp nhiều lần, cân nhắc cập nhật vào AGENTS.md
-`hasattr(obj, "__iter__")` trả `True` sai cho `FamilySymbol`/`FamilyInstance`
-(dùng `isinstance(obj, (list, tuple))`); output node trước có thể bị Dynamo
-wrap thành `[list, log]` cần unwrap khi nhận. *(Đã đề xuất đưa 2 rule này lên
-AGENTS.md vì sẽ tái diễn ở tool khác — xem phần dưới.)*
+## Lỗi generic, cân nhắc cập nhật vào AGENTS.md
+
+(Điền các lỗi có khả năng cao sẽ xảy ra ở những tool dynamo khác)
 
 ## Việc còn lại
-- [ ] Kiểm tra vị trí đặt detail có đúng ở giữa cửa không (mỗi bên cách đều mép cửa 20mm)
-- [ ] Chống duplicate khi chạy lại — nếu bị trùng thì hiện thông báo
-- [ ] Node code block để tuỳ biến giá trị cộng thêm vào Length (hiện fix cứng 20mm)
+
+- [x] Phòng trường hợp tạo duplicate detail
+- [x] Kiểm tra vị trí đặt detail có đúng ở giữa cửa không — thêm N9Check (independent bbox + wall curve vs read-back annotation); cần test trên model
+- [x] Node code block để tuỳ biến giá trị cộng thêm vào Length (hiện fix cứng 20mm) — N9 IN[4] = extra mm mỗi bên, default 20 (done 20/7)
 - [ ] (Nâng cao) chọn plan view + dùng phối cảnh 3D để chọn đối tượng cửa
 
 ## Lịch sử thay đổi
+
 - 15/7: Hoàn thành 10 node, 4 phase; rewrite N3-N10 hỗ trợ batch; fix N5/N6 unwrap
 - 18/7: Fix N5.py/N8.py sai nội dung; fix N8 "no len()"; thêm configurable param
   name; fix N5 sai công thức thickness; fix N9 iterable + XYZ operator; N10 vẫn
   chưa fix được
-- **19/7: Fix N10 — thay `.Symbol` bằng `GetTypeId()`; thêm `UnwrapElement` + `get_fresh_element`; sửa input parsing**
-- **20/7: Xoá N10, chuyển sang kiểm tra thủ công bằng node Dynamo có sẵn**
+- 19/7: Xoá N10, chuyển sang kiểm tra thủ công bằng node Dynamo có sẵn
+- 20/7: Bỏ Phase 5 (N11-N13) khỏi progress; tool chỉ còn N1-N9. N9 thêm IN[4] tuỳ biến extra mm.
+- 20/7: N9 dedup (scan Active View, skip trùng). Thêm N9Check sanity-check vị trí (bbox + wall curve vs read-back annotation).
