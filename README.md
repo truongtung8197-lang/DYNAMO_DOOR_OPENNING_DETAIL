@@ -13,7 +13,7 @@ Khi chọn một hoặc nhiều Door/Window trong Plan View, tool sẽ:
 * Tự tính chiều dài:
 
 ```text
-Length = Width cửa + 40 mm
+Length = Width cửa + 2 * extra_mm (mặc định 20mm mỗi bên)
 ```
 
 * Tự tạo Type mới nếu chưa tồn tại:
@@ -25,10 +25,11 @@ Length = Width cửa + 40 mm
 * Gán:
 
 ```text
-Width_Door (Type Parameter) = độ dày tường
+Width_Door (Type Parameter) = độ dày tường (mm)
 ```
 
-* Kiểm tra kết quả sau khi tạo annotation bằng các node Dynamo có sẵn (Watch, List.Contains, v.v.).
+* Tự động kiểm tra duplicate: bỏ qua annotation đã tồn tại tại cùng vị trí và hướng.
+* Có node kiểm tra độc lập (N9Check) để verify kết quả.
 
 ---
 
@@ -56,15 +57,16 @@ Width_Door
 ├── progress.md
 ├── Home.dyn
 └── src/
-    ├── N1_GetSelectedElements.py
-    ├── N2_PickDetailComponent.py
-    ├── N3_GetWidth.py
-    ├── N4_GetHostWall.py
-    ├── N5_GetWallThickness.py
-    ├── N6_GetWallOrientation.py
-    ├── N7_GetLocationPoint.py
-    ├── N8_GetOrCreateType.py
-    └── N9_CreateAnnotation.py
+    ├── N1.py
+    ├── N2.py
+    ├── N3.py
+    ├── N4.py
+    ├── N5.py
+    ├── N6.py
+    ├── N7.py
+    ├── N8.py
+    ├── N9.py
+    └── N9Check.py
 ```
 
 ---
@@ -101,6 +103,7 @@ N1.py
 N2.py
 ...
 N9.py
+N9Check.py
 ```
 
 Cách này giúp:
@@ -125,6 +128,7 @@ Cách này giúp:
 | N7   | Lấy tâm cửa                  |
 | N8   | Tìm hoặc tạo Type phù hợp    |
 | N9   | Tạo annotation               |
+| N9Check | Kiểm tra kết quả annotation |
 
 ---
 
@@ -140,6 +144,8 @@ N4 → N5, N6
 N2 + N5 → N8
 
 N8 + N7 + N6 + N3 → N9
+
+N9 + N1 + N4 → N9Check (optional, để verify)
 ```
 
 Tất cả các node từ `N3 → N9` đều hỗ trợ list input.
@@ -159,7 +165,8 @@ Không cần:
 3. Dùng `N2` để chọn một Detail Component mẫu trong model.
 4. Nối dây theo sơ đồ ở mục 6.
 5. Chạy graph Dynamo.
-6. Kiểm tra kết quả bằng các node Dynamo có sẵn (Watch, List.Contains, v.v.).
+6. (Optional) Dùng `N9Check` để tự động verify kết quả.
+7. Kiểm tra kết quả bằng các node Dynamo có sẵn (Watch, List.Contains, v.v.).
 
 ---
 
@@ -173,16 +180,27 @@ Không cần:
 * Tạo annotation đúng hướng.
 * Tự tạo Type theo độ dày tường.
 * Hỗ trợ xử lý batch.
+* Tự động chống duplicate annotation.
+* Có node kiểm tra độc lập (N9Check) để verify tự động.
 
-**Cách kiểm tra thủ công**: dùng các node Dynamo có sẵn (Watch, List.Contains, v.v.) để kiểm tra:
+**Kiểm tra tự động bằng N9Check:**
+
+Node `N9Check` sẽ tự động verify:
+
+* Vị trí annotation có đúng ở giữa cửa không (tolerance 1mm).
+* Chiều dài annotation có đúng không (tolerance 1mm).
+* Hướng annotation có song song với wall không (tolerance dot product > 0.999).
+
+**Output N9Check:**
+
+* `OUT[0]`: List<bool> - True/False/None cho từng phần tử
+* `OUT[1]`: List<string> - "OK" hoặc mô tả deviation
+* `OUT[2]`: Log tổng hợp
+
+**Kiểm tra thủ công** (nếu cần): dùng các node Dynamo có sẵn (Watch, List.Contains, v.v.) để kiểm tra:
 
 * `Width_Door` (type parameter) có bằng độ dày tường không.
-* `Length` có bằng `Width cửa + 40 mm` không.
-
-**Chưa kiểm tra tự động được** (cần kiểm tra thủ công bằng mắt hoặc bằng các node Dynamo có sẵn):
-
-* Vị trí đặt detail có đúng ở giữa cửa không (mỗi bên cách đều mép cửa 20mm).
-* Có bị trùng lặp không (hiện chưa có cơ chế chống duplicate, nếu bị trùng sẽ hiện thông báo).
+* `Length` có bằng `Width cửa + 2 * extra_mm` không.
 
 ---
 
@@ -190,3 +208,6 @@ Không cần:
 
 * `progress.md` chứa toàn bộ lịch sử phát triển, quyết định kiến trúc và các lỗi đã xử lý.
 * Khi thay đổi tên parameter trong family, cần cập nhật đồng thời các node sử dụng parameter đó.
+* N9 có cơ chế chống duplicate tự động dựa trên vị trí midpoint + hướng + type.
+* N8 hỗ trợ custom parameter name qua input `IN[2]` (mặc định: "Width_Door").
+* Tất cả node đều hỗ trợ batch processing (list input) mà không cần List.Map.
